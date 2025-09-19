@@ -4,133 +4,114 @@ import numpy as np
 
 def fuzzy_median_filter(img, kernel_size, alpha):
     """
-    Improved fuzzy inference system for adaptive image denoising.
+    Noise-aware fuzzy inference system for adaptive image denoising.
     
-    This implements an optimized fuzzy-based denoising approach where:
-    - kernel_size: Controls the neighborhood size for filtering
-    - alpha: Controls the balance between noise reduction and detail preservation
-    
-    The fuzzy system adapts denoising strength based on local image properties.
+    This implements an intelligent fuzzy approach that:
+    - Automatically detects noise type (Gaussian vs Salt & Pepper)
+    - Adapts denoising strategy based on noise characteristics
+    - Uses appropriate filters for each noise type
     
     Args:
         img: Input noisy image
         kernel_size: Median filter kernel size (3, 5, or 7)
-        alpha: Fuzzy inference parameter (0.2-0.7) controlling denoising strength
+        alpha: Fuzzy inference parameter (0.2-0.8) controlling denoising strategy
     
     Returns:
-        Denoised image using optimized fuzzy inference system
+        Denoised image using noise-aware fuzzy inference system
     """
     # Ensure kernel size is valid for image size
     if img.shape[0] < kernel_size or img.shape[1] < kernel_size:
         kernel_size = 3
     
     try:
-        # Stage 1: Improved fuzzy-based noise reduction
-        # The fuzzy system determines denoising strategy based on alpha parameter
-        
-        if alpha <= 0.3:
-            # Low alpha: Preserve details, light denoising
-            # Fuzzy rule: IF noise_level is LOW THEN use edge_preserving_filter
-            denoised = cv2.bilateralFilter(img, kernel_size, 40 + alpha * 30, 40 + alpha * 30)
-            
-        elif alpha <= 0.5:
-            # Medium alpha: Balanced approach with improved blending
-            # Fuzzy rule: IF noise_level is MEDIUM THEN combine bilateral AND median optimally
-            bilateral = cv2.bilateralFilter(img, kernel_size, 50 + alpha * 20, 50 + alpha * 20)
-            median = cv2.medianBlur(img, kernel_size)
-            
-            # Improved fuzzy membership function for blending
-            blend_weight = (alpha - 0.3) / 0.2  # Maps 0.3-0.5 to 0-1
-            # Non-linear blending for better results
-            blend_weight = blend_weight ** 0.8  # Slightly favor bilateral filtering
-            
-            denoised = cv2.addWeighted(bilateral, 1 - blend_weight, median, blend_weight, 0)
-            
-        else:
-            # High alpha: Strong denoising but preserve important edges
-            # Fuzzy rule: IF noise_level is HIGH THEN use selective_aggressive_filtering
-            # Use morphological opening to preserve important structures
-            kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
-            opened = cv2.morphologyEx(img, cv2.MORPH_OPEN, kernel)
-            
-            # Combine median with morphological result
-            median = cv2.medianBlur(img, kernel_size)
-            denoised = cv2.addWeighted(median, 0.7, opened, 0.3, 0)
-            
-            # Additional smoothing for very high alpha values
-            if alpha > 0.6:
-                denoised = cv2.GaussianBlur(denoised, (3, 3), 0.5 + (alpha - 0.6) * 0.5)
-        
-        # Stage 2: Improved fuzzy-based detail enhancement
-        # Create multiple scales for fuzzy detail recovery
-        gaussian_fine = cv2.GaussianBlur(denoised, (0, 0), 0.8 + alpha * 0.4)
-        gaussian_coarse = cv2.GaussianBlur(denoised, (0, 0), 1.2 + alpha * 0.6)
-        
-        # Optimized fuzzy membership functions for enhancement strength
-        # Less aggressive enhancement to avoid over-sharpening
-        unsharp_strength_fine = 1.3 + alpha * 0.5    # Reduced from 1.8 + alpha * 1.2
-        unsharp_strength_coarse = 1.1 + alpha * 0.3  # Reduced from 1.2 + alpha * 0.8
-        
-        # Apply fuzzy-controlled unsharp masking
-        fine_details = cv2.addWeighted(denoised, unsharp_strength_fine, 
-                                     gaussian_fine, -(unsharp_strength_fine - 1.0), 0)
-        coarse_details = cv2.addWeighted(denoised, unsharp_strength_coarse, 
-                                       gaussian_coarse, -(unsharp_strength_coarse - 1.0), 0)
-        
-        # Fuzzy combination of detail enhancements with better balance
-        detail_enhanced = cv2.addWeighted(fine_details, 0.6, coarse_details, 0.4, 0)
-        
-        # Stage 3: Improved fuzzy adaptive blending based on local variance
-        # Calculate local variance for fuzzy texture classification
+        # Step 0: Conservative noise type detection
         gray_img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY) if len(img.shape) == 3 else img
         
-        # Local variance computation with better kernel
-        local_mean = cv2.GaussianBlur(gray_img.astype(np.float32), (7, 7), 1.0)
-        local_variance = cv2.GaussianBlur((gray_img.astype(np.float32) - local_mean) ** 2, (7, 7), 1.0)
+        # Calculate noise characteristics
+        local_mean = cv2.GaussianBlur(gray_img.astype(np.float32), (5, 5), 1.0)
+        local_variance = cv2.GaussianBlur((gray_img.astype(np.float32) - local_mean) ** 2, (5, 5), 1.0)
+        avg_variance = np.mean(local_variance)
         
-        # Fuzzy membership function for texture classification
-        variance_norm = cv2.normalize(local_variance, None, 0, 1, cv2.NORM_MINMAX)
+        # More conservative salt & pepper detection
+        total_pixels = gray_img.size
+        very_dark = np.sum(gray_img < 20) / total_pixels
+        very_bright = np.sum(gray_img > 235) / total_pixels
+        impulse_ratio = very_dark + very_bright
         
-        # Extend variance map to match image dimensions
-        if len(img.shape) == 3:
-            variance_weights = np.stack([variance_norm] * 3, axis=2)
+        # Conservative threshold - only classify as SP if very obvious
+        is_impulse_noise = impulse_ratio > 0.12
+        
+        if is_impulse_noise:
+            # SIMPLIFIED RULE SET A: Salt & Pepper Noise Handling
+            # Keep it simple - median filtering works best for impulse noise
+            
+            if alpha <= 0.6:
+                # Conservative median filtering
+                result = cv2.medianBlur(img, kernel_size)
+            else:
+                # High alpha: More aggressive median filtering
+                result = cv2.medianBlur(img, kernel_size)
+                
+                # Only add morphological cleanup if kernel is large enough
+                if kernel_size >= 5:
+                    kernel_morph = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+                    result = cv2.morphologyEx(result, cv2.MORPH_OPEN, kernel_morph)
+            
+            # NO enhancement for impulse noise - it amplifies remaining artifacts
+            
         else:
-            variance_weights = variance_norm
-        
-        # Improved fuzzy rules for adaptive blending:
-        # More conservative blending weights
-        original_weight = 0.15 + variance_weights * 0.25     # 0.15 to 0.4
-        denoised_weight = 0.55 - variance_weights * 0.2      # 0.55 to 0.35
-        enhanced_weight = 0.3 + alpha * 0.15                 # 0.3 to 0.45
-        
-        # Normalize fuzzy weights
-        total_weight = original_weight + denoised_weight + enhanced_weight
-        original_weight /= total_weight
-        denoised_weight /= total_weight
-        enhanced_weight /= total_weight
-        
-        # Final fuzzy-weighted combination
-        result = (img.astype(np.float32) * original_weight + 
-                 denoised.astype(np.float32) * denoised_weight + 
-                 detail_enhanced.astype(np.float32) * enhanced_weight)
+            # SIMPLIFIED RULE SET B: Gaussian Noise Handling  
+            # Focus on proven approaches
+            
+            if alpha <= 0.4:
+                # Low alpha: Edge-preserving bilateral filter
+                result = cv2.bilateralFilter(img, kernel_size, 
+                                           40 + alpha * 30,
+                                           40 + alpha * 30)
+            elif alpha <= 0.7:
+                # Medium alpha: Balanced bilateral + median approach
+                bilateral = cv2.bilateralFilter(img, kernel_size, 
+                                              50 + (alpha - 0.4) * 25,
+                                              50 + (alpha - 0.4) * 25)
+                median = cv2.medianBlur(img, kernel_size)
+                
+                # Simple blending based on alpha
+                median_weight = (alpha - 0.4) / 0.3 * 0.4  # Max 40% median
+                result = cv2.addWeighted(bilateral, 1 - median_weight, 
+                                       median, median_weight, 0)
+            else:
+                # High alpha: Stronger denoising
+                result = cv2.medianBlur(img, kernel_size)
+                
+                # Light bilateral smoothing
+                result = cv2.bilateralFilter(result, 3, 30, 30)
+            
+            # Conservative enhancement only for Gaussian noise
+            if alpha > 0.5 and avg_variance > 100:
+                gaussian = cv2.GaussianBlur(result, (0, 0), 1.0)
+                enhancement_strength = 1.0 + (alpha - 0.5) * 0.15  # Very conservative: 1.0 to 1.075
+                enhanced = cv2.addWeighted(result, enhancement_strength, 
+                                         gaussian, -(enhancement_strength - 1.0), 0)
+                # Very light blending
+                result = cv2.addWeighted(result, 0.85, enhanced, 0.15, 0)
         
         # Ensure output is in valid range
-        enhanced = np.clip(result, 0, 255).astype(np.uint8)
+        result = np.clip(result, 0, 255).astype(np.uint8)
         
     except Exception as e:
         print(f'Warning: Fuzzy denoising failed for kernel_size={kernel_size}, error: {e}')
         # Improved fallback strategy
         try:
             # Try bilateral filter first
-            enhanced = cv2.bilateralFilter(img, kernel_size, 50, 50)
+            result = cv2.bilateralFilter(img, kernel_size, 50, 50)
         except:
             # Ultimate fallback to simple median
             try:
-                enhanced = cv2.medianBlur(img, kernel_size)
+                result = cv2.medianBlur(img, kernel_size)
             except:
-                enhanced = img.copy()
+                result = img.copy()
     
-    return enhanced
+    return result
 
 def simple_denoising_filter(img, kernel_size, alpha):
     """

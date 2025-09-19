@@ -37,16 +37,19 @@ class GAAnalyzer:
             
         fname = os.path.splitext(os.path.basename(img_path))[0]
         
-        # Add noise
+        # Add noise based on configuration
         if self.config.noise_type == 'gaussian':
             noisy_img = add_gaussian_noise(clean_img, sigma=self.config.gaussian_sigma)
+            noise_type = 'gaussian'
         elif self.config.noise_type == 'sp':
             noisy_img = add_salt_pepper_noise(clean_img, amount=self.config.sp_amount)
+            noise_type = 'sp'
         else:
             return None
         
-        # Run genetic algorithm optimization
-        ga = GeneticAlgorithm(self.config.pop_size, self.config.generations, self.enhanced_mode)
+        # Run genetic algorithm optimization with noise-type awareness
+        ga = GeneticAlgorithm(self.config.pop_size, self.config.generations, 
+                             self.enhanced_mode, noise_type)
         
         if self.config.metric == 'combined':
             best, fitness_history = ga.evolve(

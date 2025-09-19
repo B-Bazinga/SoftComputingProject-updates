@@ -56,17 +56,22 @@ def add_gaussian_noise(img, sigma=25):
 
 def add_salt_pepper_noise(img, amount=0.1):
     """Add salt and pepper noise to image."""
+    if img is None:
+        raise ValueError("Input image is None")
+    
     noisy = np.copy(img)
-    num_salt = np.ceil(amount * img.size * 0.5)
-    num_pepper = np.ceil(amount * img.size * 0.5)
+    num_salt = int(np.ceil(amount * img.size * 0.5))
+    num_pepper = int(np.ceil(amount * img.size * 0.5))
     
-    # Salt
-    coords = [np.random.randint(0, i - 1, int(num_salt)) for i in img.shape]
-    noisy[coords] = 255
+    # Salt noise - ensure coordinates are within bounds
+    if num_salt > 0:
+        coords = tuple([np.random.randint(0, i, num_salt) for i in img.shape])
+        noisy[coords] = 255
     
-    # Pepper
-    coords = [np.random.randint(0, i - 1, int(num_pepper)) for i in img.shape]
-    noisy[coords] = 0
+    # Pepper noise - ensure coordinates are within bounds
+    if num_pepper > 0:
+        coords = tuple([np.random.randint(0, i, num_pepper) for i in img.shape])
+        noisy[coords] = 0
     
     return noisy
 
